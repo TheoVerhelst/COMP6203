@@ -22,9 +22,9 @@ import negotiator.utility.AdditiveUtilitySpace;
  * It keeps track of the frequency of the items the opponents propose, as rough
  * estimate of their utility function. It has a simple boulware acceptance
  * threshold. It tries to generate randomly a bunch of bids having an utility
- * greater than the threshold. If it cannot find such bid, it accepts the last
- * proposed offer. Otherwise, it proposes the bid which maximises the average of
- * estimated opponent utilities.
+ * greater than the threshold. If it cannot find such bid, it proposes the
+ * maximum utility bid. Otherwise, it proposes the bid which maximises the
+ * average of estimated opponent utilities.
  */
 public class HardHeadedTest extends AbstractNegotiationParty {
 
@@ -182,25 +182,23 @@ public class HardHeadedTest extends AbstractNegotiationParty {
      * @return The average of the estimated utility of the opponents on this bid.
      */
     private double getEstimatedOpponentUtility(Bid bid) {
-        Map<AgentID, Double> estimatedUtilities = new HashMap<>();
+        double estimatedUtility = 0;
         for (AgentID agentID : opponentsModels.keySet()) {
-            double estimatedUtility = 0;
             Map<Integer, Map<Value, Integer>> agentModel = opponentsModels.get(agentID);
 
             HashMap<Integer, Value> issueValues = bid.getValues();
             for (int issueNumber : issueValues.keySet()) {
                 estimatedUtility += agentModel.get(issueNumber).get(issueValues.get(issueNumber));
             }
-            // divide by the round count to obtain proper frequencies
-            estimatedUtility /= roundCount;
-            // and divide by number of issues, since we don't know the weights
-            // (thus assuming equal weight for every issue)
-            estimatedUtility /= issueValues.size();
-            estimatedUtilities.put(agentID, estimatedUtility);
         }
-        // Sum all values in the map, and divide by the number of opponents
-        return estimatedUtilities.values().stream().mapToDouble(Double::doubleValue).sum()
-                / estimatedUtilities.size();
+        // divide by the round count to obtain proper frequencies
+        estimatedUtility /= roundCount;
+        // divide by number of issues, since we don't know the weights
+        // (thus assuming equal weight for every issue)
+        estimatedUtility /= additiveUtilitySpace.getDomain().getIssues().size();
+        
+        // and divide by the number of opponents
+        return estimatedUtility / opponentsModels.size();
     }
 
     /**

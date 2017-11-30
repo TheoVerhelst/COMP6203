@@ -1,9 +1,12 @@
+package group9_theo;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -12,10 +15,10 @@ import negotiator.Bid;
 import negotiator.actions.Accept;
 import negotiator.actions.Action;
 import negotiator.actions.Offer;
-import negotiator.issue.Value;
 import negotiator.parties.AbstractNegotiationParty;
 import negotiator.parties.NegotiationInfo;
 import negotiator.utility.AdditiveUtilitySpace;
+
 
 /**
  * Bargaining agent with simple boulware strategy for multilateral negotiation.
@@ -26,22 +29,14 @@ import negotiator.utility.AdditiveUtilitySpace;
  * maximum utility bid. Otherwise, it proposes the bid which maximises the
  * average of estimated opponent utilities.
  */
-public class HardHeadedTest extends AbstractNegotiationParty {
+public class Agent9 extends AbstractNegotiationParty {
 
     private final String description = "HardHeaded test";
     /**
-     * Holds the estimation of the model of the opponent, by storing a double
-     * for each possible issue value. The outer Map has the opponent ID as key,
-     * and their respective model as value. Each opponent model is a Map with
-     * the issue number as key, and a Map of frequency for each possible issue
-     * item as value.
+     * Holds the estimation of the profile of the opponents. See OpponentModel
+     * class for further explanations.
      */
-    private final Map<AgentID, Map<Integer, Map<Value, Integer>>> opponentsModels = new HashMap<>();
-    /**
-     * Keep track of how many rounds have passed, to compute the frequencies
-     * properly.
-     */
-    private int roundCount = 0;
+    private final Map<AgentID, OpponentModel> opponentsModels = new HashMap<>();
     /**
      * Allows access to information about our negotiation.
      */
@@ -58,11 +53,19 @@ public class HardHeadedTest extends AbstractNegotiationParty {
      * The rate that defines our conceding strategy.
      */
     private final double concessionRate = 0.3;
-    
     /**
      * Point in time at which we stop conceding and start exploiting the opponents.
      */
     private final double concessionTimeLimit = 0.85;
+    /**
+     * Probability of choosing a random bid instead of the best according to
+     * opponent model.
+     */
+    private final double epsilon = 0.05;
+    /**
+     * Random number generator, for using epsilon-greedy algorithm.
+     */
+    private final Random randomGenerator = new Random(); 
     /**
      * The bid on the table.
      */
@@ -76,9 +79,9 @@ public class HardHeadedTest extends AbstractNegotiationParty {
             Bid maxBid = this.additiveUtilitySpace.getMaxUtilityBid();
             maxUtility = additiveUtilitySpace.getUtility(maxBid);
             Bid minBid = this.additiveUtilitySpace.getMinUtilityBid();
-            minUtility = 0.75;
+            minUtility = additiveUtilitySpace.getUtility(minBid);
         } catch (Exception ex) {
-            Logger.getLogger(HardHeadedTest.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(Agent9.class.getName()).log(Level.SEVERE, null, ex);
         }
 
     }
@@ -94,11 +97,10 @@ public class HardHeadedTest extends AbstractNegotiationParty {
      */
     @Override
     public Action chooseAction(List<Class<? extends Action>> list) {
-        // Update time-related stuff
-        roundCount++;
         double utilityThreshold = getUtilityThreshold();
 
         // Check if the last bid is above our threshold
+        
         if (lastReceivedBid != null) {
             double lastBidUtility = additiveUtilitySpace.getUtility(lastReceivedBid);
             if (lastBidUtility >= utilityThreshold) {
@@ -107,15 +109,18 @@ public class HardHeadedTest extends AbstractNegotiationParty {
         }
 
         // Generate a bunch of bids above the threshold
-        Set<Bid> setBid = generateBids(utilityThreshold, 30, 10000);
-        // Find the best bid according to our model of the opponent
-        Bid bestBid = Collections.max(setBid, (Bid lhs, Bid rhs) -> {
-            double lhsUtility = getEstimatedOpponentUtility(lhs);
-            double rhsUtility = getEstimatedOpponentUtility(rhs);
-            return Double.compare(lhsUtility, rhsUtility);
-        });
-        System.out.println(bestBid);
-        return new Offer(this.getPartyId(), bestBid);
+        Set<Bid> bidSet = generateBids(utilityThreshold, 30, 10000);
+        
+        // Epsilon-greedy: with probability eps, we send a random acceptable offer
+        //if(randomGenerator.nextDouble() <= epsilon) {
+        //    return new Offer(this.getPartyId(), takeRandomBid(bidSet));
+        //} else {
+            // Else, find the best bid according to our model of the opponent
+            Bid bestBid = Collections.max(bidSet, (Bid lhs, Bid rhs) -> 
+                Double.compare(getOpponentScore(lhs), getOpponentScore(rhs))
+            );
+            return new Offer(this.getPartyId(), bestBid);
+        //}
     }
     
     private double getUtilityThreshold() {
@@ -123,10 +128,10 @@ public class HardHeadedTest extends AbstractNegotiationParty {
         //if(time < concessionTimeLimit) {
             return maxUtility
                 - (maxUtility - minUtility) * Math.pow(time, 1 / concessionRate);
-    /*    } else {
-            double offset = (minUtility - maxUtility * concessionTimeLimit) / (1 - concessionTimeLimit);
-            return (minUtility - offset) * time + offset;
-        }*/
+        //} else {
+        //    double offset = (minUtility - maxUtility * concessionTimeLimit) / (1 - concessionTimeLimit);
+        //    return (minUtility - offset) * time + offset;
+        //}
     }
 
     /** 
@@ -169,51 +174,24 @@ public class HardHeadedTest extends AbstractNegotiationParty {
         super.receiveMessage(sender, act);
         if (act instanceof Offer) {
             Bid bid = ((Offer) act).getBid();
+            opponentsModels.getOrDefault(sender, new OpponentModel()).registerBid(bid, getUtility(bid));
 
             // Storing last received bid
             lastReceivedBid = bid;
-
-            // Get the data structure of the model of the opponent
-            // (and create one if it does not exist)
-            Map<Integer, Map<Value, Integer>> senderModel
-                    = opponentsModels.getOrDefault(sender, new HashMap<>());
-
-            // Get the list of issues and values associated in the proposed bid
-            HashMap<Integer, Value> issueValues = bid.getValues();
-            // Iterate on each issue, and update the frequency of the offered value
-            for (int issueNumber : issueValues.keySet()) {
-                Map<Value, Integer> issueModel = senderModel.getOrDefault(issueNumber, new HashMap<>());
-                // Get the count of the given item
-                int valueCount = issueModel.getOrDefault(issueValues.get(issueNumber), 0);
-                // Update it, by incrementing it
-                issueModel.put(issueValues.get(issueNumber), valueCount + 1);
-            }
         }
     }
 
     /**
-     * Calculates an estimation of the utility of the opponents on a bid.
+     * Calculates a score representing the preferences of the opponents on a bid.
      * @param bid The bid to evaluate.
-     * @return The average of the estimated utility of the opponents on this bid.
+     * @return An estimated measure of preference of the opponents on this bid.
      */
-    private double getEstimatedOpponentUtility(Bid bid) {
-        double estimatedUtility = 0;
-        for (AgentID agentID : opponentsModels.keySet()) {
-            Map<Integer, Map<Value, Integer>> agentModel = opponentsModels.get(agentID);
-
-            HashMap<Integer, Value> issueValues = bid.getValues();
-            for (int issueNumber : issueValues.keySet()) {
-                estimatedUtility += agentModel.get(issueNumber).get(issueValues.get(issueNumber));
-            }
+    private double getOpponentScore(Bid bid) {
+        double score = 0;
+        for(OpponentModel model : opponentsModels.values()) {
+                score += model.getEstimatedScore(bid);
         }
-        // divide by the round count to obtain proper frequencies
-        estimatedUtility /= roundCount;
-        // divide by number of issues, since we don't know the weights
-        // (thus assuming equal weight for every issue)
-        estimatedUtility /= additiveUtilitySpace.getDomain().getIssues().size();
-        
-        // and divide by the number of opponents
-        return estimatedUtility / opponentsModels.size();
+        return score;
     }
 
     /**
@@ -231,8 +209,15 @@ public class HardHeadedTest extends AbstractNegotiationParty {
         try {
             return this.additiveUtilitySpace.getMaxUtilityBid();
         } catch (Exception ex) {
-            Logger.getLogger(HardHeadedTest.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(Agent9.class.getName()).log(Level.SEVERE, null, ex);
         }
         return null;
+    }
+    
+    private Bid takeRandomBid(Set<Bid> bidSet) {
+        List<Bid> list = new ArrayList(bidSet.size());
+        list.addAll(bidSet);
+        Collections.shuffle(list);
+        return list.get(0);
     }
 }

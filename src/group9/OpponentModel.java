@@ -3,7 +3,7 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package group9_theo;
+package group9;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -29,6 +29,8 @@ public class OpponentModel {
      */
     private Double firstBidUtility = null;
     
+    private double scoreDecayFactor = 4;
+    
     public void registerBid(Bid newBid, double ourUtility) {
         if(firstBidUtility == null) {
             firstBidUtility = ourUtility;
@@ -40,8 +42,10 @@ public class OpponentModel {
         HashMap<Integer, Value> issueValues = newBid.getValues();
         
         for (int issueNumber : issueValues.keySet()) {
-            Map<Value, Integer> issueCounts = itemCounts.getOrDefault(issueNumber, new HashMap<>());
-            Map<Value, Double> issueScores = itemScores.getOrDefault(issueNumber, new HashMap<>());
+            itemCounts.putIfAbsent(issueNumber, new HashMap<>());
+            Map<Value, Integer> issueCounts = itemCounts.get(issueNumber);
+            itemScores.putIfAbsent(issueNumber, new HashMap<>());
+            Map<Value, Double> issueScores = itemScores.get(issueNumber);
             Value value = issueValues.get(issueNumber);
             
             // Initiate the values if they are not already present
@@ -49,7 +53,8 @@ public class OpponentModel {
             issueCounts.putIfAbsent(value, 0);
             
             // Calculate the new score as described in ABiNeS strategy.
-            double newItemScore = issueScores.get(value) + Math.pow(opponentConcession, issueCounts.get(value));
+            double newItemScore = issueScores.get(value)
+                    + Math.pow(1 - opponentConcession, scoreDecayFactor * issueCounts.get(value));
             
             issueScores.put(value, newItemScore);
             issueCounts.put(value, issueCounts.get(value) + 1);
@@ -64,8 +69,9 @@ public class OpponentModel {
     public double getEstimatedScore(Bid bid) {
         double score = 0;
         for(Map.Entry<Integer, Value> bidIssue : bid.getValues().entrySet()) {
-                score += itemScores.get(bidIssue.getKey()).get(bidIssue.getValue());
+                score += itemScores.get(bidIssue.getKey()).getOrDefault(bidIssue.getValue(), 0.);
         }
         return score;
     }
+
 }

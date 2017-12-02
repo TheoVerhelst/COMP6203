@@ -1,4 +1,4 @@
-package group9_theo;
+package group9;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -54,10 +54,6 @@ public class Agent9 extends AbstractNegotiationParty {
      */
     private final double concessionRate = 0.3;
     /**
-     * Point in time at which we stop conceding and start exploiting the opponents.
-     */
-    private final double concessionTimeLimit = 0.85;
-    /**
      * Probability of choosing a random bid instead of the best according to
      * opponent model.
      */
@@ -100,7 +96,6 @@ public class Agent9 extends AbstractNegotiationParty {
         double utilityThreshold = getUtilityThreshold();
 
         // Check if the last bid is above our threshold
-        
         if (lastReceivedBid != null) {
             double lastBidUtility = additiveUtilitySpace.getUtility(lastReceivedBid);
             if (lastBidUtility >= utilityThreshold) {
@@ -112,26 +107,21 @@ public class Agent9 extends AbstractNegotiationParty {
         Set<Bid> bidSet = generateBids(utilityThreshold, 30, 10000);
         
         // Epsilon-greedy: with probability eps, we send a random acceptable offer
-        //if(randomGenerator.nextDouble() <= epsilon) {
-        //    return new Offer(this.getPartyId(), takeRandomBid(bidSet));
-        //} else {
+        if(randomGenerator.nextDouble() <= epsilon) {
+            return new Offer(this.getPartyId(), takeRandomBid(bidSet));
+        } else {
             // Else, find the best bid according to our model of the opponent
             Bid bestBid = Collections.max(bidSet, (Bid lhs, Bid rhs) -> 
                 Double.compare(getOpponentScore(lhs), getOpponentScore(rhs))
             );
             return new Offer(this.getPartyId(), bestBid);
-        //}
+        }
     }
     
     private double getUtilityThreshold() {
-        double time = getTimeLine().getTime();
-        //if(time < concessionTimeLimit) {
-            return maxUtility
-                - (maxUtility - minUtility) * Math.pow(time, 1 / concessionRate);
-        //} else {
-        //    double offset = (minUtility - maxUtility * concessionTimeLimit) / (1 - concessionTimeLimit);
-        //    return (minUtility - offset) * time + offset;
-        //}
+        return maxUtility - (maxUtility - minUtility)
+                * Math.pow(getTimeLine().getTime(), 1 / concessionRate);
+
     }
 
     /** 
@@ -154,14 +144,21 @@ public class Agent9 extends AbstractNegotiationParty {
             return result;
         }
 
+        // If we spend 1/10 of the allowed time without finding anything new, then stop
+        int deadSpinLimit = spinLimit / 10;
         int spinCount = 0;
+        int deadSpinCount = 0;
         do {
             Bid randomBid = generateRandomBid();
             if (additiveUtilitySpace.getUtility(randomBid) >= threshold) {
+                if(!result.contains(randomBid)) {
+                    deadSpinCount = -1;
+                }
                 result.add(randomBid);
             }
             spinCount++;
-        } while (result.size() < numberOfBids && spinCount < spinLimit);
+            deadSpinCount++;
+        } while (result.size() < numberOfBids && spinCount < spinLimit && deadSpinCount < deadSpinLimit);
         return result;
     }
 
@@ -174,7 +171,8 @@ public class Agent9 extends AbstractNegotiationParty {
         super.receiveMessage(sender, act);
         if (act instanceof Offer) {
             Bid bid = ((Offer) act).getBid();
-            opponentsModels.getOrDefault(sender, new OpponentModel()).registerBid(bid, getUtility(bid));
+            opponentsModels.putIfAbsent(sender, new OpponentModel());
+            opponentsModels.get(sender).registerBid(bid, getUtility(bid));
 
             // Storing last received bid
             lastReceivedBid = bid;
@@ -189,7 +187,7 @@ public class Agent9 extends AbstractNegotiationParty {
     private double getOpponentScore(Bid bid) {
         double score = 0;
         for(OpponentModel model : opponentsModels.values()) {
-                score += model.getEstimatedScore(bid);
+            score += model.getEstimatedScore(bid);
         }
         return score;
     }

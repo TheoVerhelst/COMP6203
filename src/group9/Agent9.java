@@ -13,18 +13,19 @@ import negotiator.parties.NegotiationInfo;
 public class Agent9 extends AbstractNegotiationParty {
 
     private final HashMap<AgentID, ArrayList<Double>> analysisTimeReceivedOffers = new HashMap<>();
-    private final HardHeaded theo = new HardHeaded();
-    private final ATriNeS michael = new ATriNeS();
-    private final Athrines emil = new Athrines();
-    private AbstractNegotiationParty selectedPokemon;
+    private final List<AbstractNegotiationParty> pokemons = new ArrayList<>();
+    private AbstractNegotiationParty chosenPokemon;
     private boolean choiceMade = false;
 
     @Override
     public void init(NegotiationInfo info) {
         super.init(info);
-        theo.init(info);
-        michael.init(info);
-        emil.init(info);
+        pokemons.add(new HardHeaded());
+        pokemons.add(new ATriNeS());
+        pokemons.add(new Athrines());
+        for(AbstractNegotiationParty pokemon : pokemons) {
+            pokemon.init(info);
+        }
     }
 
     private void addAnalysisOfffer(AgentID agentID, double receivedUtility) {
@@ -60,17 +61,8 @@ public class Agent9 extends AbstractNegotiationParty {
                 bestScoreIndex = i;
             }
         }
-        switch(bestScoreIndex) {
-            case 0:
-                selectedPokemon = theo;
-                break;
-            case 1:
-                selectedPokemon = michael;
-                break;
-            case 2:
-                selectedPokemon = emil;
-                break;
-        }
+        chosenPokemon = pokemons.get(bestScoreIndex);
+        System.out.println(chosenPokemon.toString() + ", I choose you!");
     }
     
     private double[] getPredictedScores(double mean1, double std1, double mean2, double std2) {
@@ -98,15 +90,15 @@ public class Agent9 extends AbstractNegotiationParty {
                 Bid receivedBid = ((Offer) act).getBid();
                 addAnalysisOfffer(sender, getUtility(receivedBid));
             }
-            theo.receiveMessage(sender, act);
-            michael.receiveMessage(sender, act);
-            emil.receiveMessage(sender, act);
+            for(AbstractNegotiationParty pokemon : pokemons) {
+                pokemon.receiveMessage(sender, act);
+            }
         } else if (!choiceMade) {
             choosePokemon();
             choiceMade = true;
-            selectedPokemon.receiveMessage(sender, act);
+            chosenPokemon.receiveMessage(sender, act);
         } else {
-            selectedPokemon.receiveMessage(sender, act);
+            chosenPokemon.receiveMessage(sender, act);
         }
     }
 
@@ -121,7 +113,7 @@ public class Agent9 extends AbstractNegotiationParty {
                 return new Offer(getPartyId(), generateRandomBid());
             }
         } else {
-            return selectedPokemon.chooseAction(arg0);
+            return chosenPokemon.chooseAction(arg0);
         }
     }
 

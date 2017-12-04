@@ -1,8 +1,14 @@
 package group9;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import negotiator.AgentID;
 import negotiator.Bid;
 import negotiator.actions.Action;
@@ -54,7 +60,14 @@ public class Agent9 extends AbstractNegotiationParty {
             stds.add(std);
         }
         
-        double[] predictedScores = getPredictedScores(means.get(0), stds.get(0), means.get(1), stds.get(1));
+        double[] predictedScores = null;
+        // If we play against two identical opponents
+        if(means.size() == 1) {
+            predictedScores = getPredictedScores(means.get(0), stds.get(0), means.get(0), stds.get(0));
+        } else {
+            predictedScores = getPredictedScores(means.get(0), stds.get(0), means.get(1), stds.get(1));
+        }
+        
         int bestScoreIndex = -1;
         for(int i = 0; i < predictedScores.length; ++i) {
             if(bestScoreIndex == -1 || predictedScores[bestScoreIndex] < predictedScores[i]) {
@@ -63,6 +76,13 @@ public class Agent9 extends AbstractNegotiationParty {
         }
         chosenPokemon = pokemons.get(bestScoreIndex);
         System.out.println(chosenPokemon.toString() + ", I choose you!");
+        try {
+            Files.write(Paths.get("choosen_pokemon"),
+                    (chosenPokemon.toString() + ", I choose you!\n").getBytes(),
+                    StandardOpenOption.APPEND);
+        }catch (IOException ex) {
+            Logger.getLogger(Agent9.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
     
     private double[] getPredictedScores(double mean1, double std1, double mean2, double std2) {

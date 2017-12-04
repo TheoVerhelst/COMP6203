@@ -279,6 +279,11 @@ public class ATriNeS extends AbstractNegotiationParty {
     public String getDescription() {
         return description;
     }
+	
+    @Override
+    public String toString() {
+        return description;
+    }
 
     private Bid getMaxUtilityBid() {
         try {

@@ -31,7 +31,7 @@ import negotiator.utility.AdditiveUtilitySpace;
  */
 public class HardHeaded extends AbstractNegotiationParty {
 
-    private final String description = "HardHeaded test";
+    private final String description = "HardHeaded";
     /**
      * Holds the estimation of the profile of the opponents. See OpponentModel
      * class for further explanations.
@@ -203,6 +203,11 @@ public class HardHeaded extends AbstractNegotiationParty {
      */
     @Override
     public String getDescription() {
+        return description;
+    }
+	
+    @Override
+    public String toString() {
         return description;
     }
 

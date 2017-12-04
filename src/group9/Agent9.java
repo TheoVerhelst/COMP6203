@@ -1,221 +1,142 @@
 package group9;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import negotiator.AgentID;
 import negotiator.Bid;
-import negotiator.actions.Accept;
 import negotiator.actions.Action;
 import negotiator.actions.Offer;
 import negotiator.parties.AbstractNegotiationParty;
 import negotiator.parties.NegotiationInfo;
-import negotiator.utility.AdditiveUtilitySpace;
 
-
-/**
- * Bargaining agent with simple boulware strategy for multilateral negotiation.
- * It keeps track of the frequency of the items the opponents propose, as rough
- * estimate of their utility function. It has a simple boulware acceptance
- * threshold. It tries to generate randomly a bunch of bids having an utility
- * greater than the threshold. If it cannot find such bid, it proposes the
- * maximum utility bid. Otherwise, it proposes the bid which maximises the
- * average of estimated opponent utilities.
- */
 public class Agent9 extends AbstractNegotiationParty {
 
-    private final String description = "HardHeaded test";
-    /**
-     * Holds the estimation of the profile of the opponents. See OpponentModel
-     * class for further explanations.
-     */
-    private final Map<AgentID, OpponentModel> opponentsModels = new HashMap<>();
-    /**
-     * Allows access to information about our negotiation.
-     */
-    private AdditiveUtilitySpace additiveUtilitySpace;
-    /**
-     * Utility of the best possible bid.
-     */
-    private double minUtility;
-    /**
-     * Utility of the worst possible bid.
-     */
-    private double maxUtility;
-    /**
-     * The rate that defines our conceding strategy.
-     */
-    private final double concessionRate = 0.3;
-    /**
-     * Probability of choosing a random bid instead of the best according to
-     * opponent model.
-     */
-    private final double epsilon = 0.05;
-    /**
-     * Random number generator, for using epsilon-greedy algorithm.
-     */
-    private final Random randomGenerator = new Random(); 
-    /**
-     * The bid on the table.
-     */
-    private Bid lastReceivedBid;
+    private final HashMap<AgentID, ArrayList<Double>> analysisTimeReceivedOffers = new HashMap<>();
+    private final HardHeaded theo = new HardHeaded();
+    private final ATriNeS michael = new ATriNeS();
+    private final Athrines emil = new Athrines();
+    private AbstractNegotiationParty selectedPokemon;
+    private boolean choiceMade = false;
 
     @Override
     public void init(NegotiationInfo info) {
         super.init(info);
-        additiveUtilitySpace = (AdditiveUtilitySpace) info.getUtilitySpace();
-        try {
-            Bid maxBid = this.additiveUtilitySpace.getMaxUtilityBid();
-            maxUtility = additiveUtilitySpace.getUtility(maxBid);
-            Bid minBid = this.additiveUtilitySpace.getMinUtilityBid();
-            minUtility = additiveUtilitySpace.getUtility(minBid);
-        } catch (Exception ex) {
-            Logger.getLogger(Agent9.class.getName()).log(Level.SEVERE, null, ex);
-        }
-
+        theo.init(info);
+        michael.init(info);
+        emil.init(info);
     }
 
-    /**
-     * When this function is called, it is expected that the Party chooses one
-     * of the actions from the possible action list and returns an instance of
-     * the chosen action.
-     *
-     * @param list A list of our possible actions, namely Accept, Offer and
-     * EndNegotiation.
-     * @return The chosen action.
-     */
-    @Override
-    public Action chooseAction(List<Class<? extends Action>> list) {
-        double utilityThreshold = getUtilityThreshold();
+    private void addAnalysisOfffer(AgentID agentID, double receivedUtility) {
+        analysisTimeReceivedOffers.putIfAbsent(agentID, new ArrayList<Double>());
+        analysisTimeReceivedOffers.get(agentID).add(receivedUtility);
+    }
 
-        // Check if the last bid is above our threshold
-        if (lastReceivedBid != null) {
-            double lastBidUtility = additiveUtilitySpace.getUtility(lastReceivedBid);
-            if (lastBidUtility >= utilityThreshold) {
-                return new Accept(this.getPartyId(), lastReceivedBid);
+    private void choosePokemon() {
+        List<Double> means = new ArrayList<>();
+        List<Double> stds = new ArrayList<>();
+        for (List<Double> utilities : analysisTimeReceivedOffers.values()) {
+            // Compute the mean received from this agent
+            double mean = 0;
+            for (Double utility : utilities) {
+                mean += utility;
+            }
+            mean /= utilities.size();
+            means.add(mean);
+            
+            // Compute the standard deviation received from this agent
+            double std = 0;
+            for (Double utility : utilities) {
+                std += (utility - mean) * (utility - mean);
+            }
+            std /= utilities.size();
+            stds.add(std);
+        }
+        
+        double[] predictedScores = getPredictedScores(means.get(0), stds.get(0), means.get(1), stds.get(1));
+        int bestScoreIndex = -1;
+        for(int i = 0; i < predictedScores.length; ++i) {
+            if(bestScoreIndex == -1 || predictedScores[bestScoreIndex] < predictedScores[i]) {
+                bestScoreIndex = i;
             }
         }
-
-        // Generate a bunch of bids above the threshold
-        Set<Bid> bidSet = generateBids(utilityThreshold, 30, 10000);
-        
-        // Epsilon-greedy: with probability eps, we send a random acceptable offer
-        if(randomGenerator.nextDouble() <= epsilon) {
-            return new Offer(this.getPartyId(), takeRandomBid(bidSet));
-        } else {
-            // Else, find the best bid according to our model of the opponent
-            Bid bestBid = Collections.max(bidSet, (Bid lhs, Bid rhs) -> 
-                Double.compare(getOpponentScore(lhs), getOpponentScore(rhs))
-            );
-            return new Offer(this.getPartyId(), bestBid);
+        switch(bestScoreIndex) {
+            case 0:
+                selectedPokemon = theo;
+                break;
+            case 1:
+                selectedPokemon = michael;
+                break;
+            case 2:
+                selectedPokemon = emil;
+                break;
         }
     }
     
-    private double getUtilityThreshold() {
-        return maxUtility - (maxUtility - minUtility)
-                * Math.pow(getTimeLine().getTime(), 1 / concessionRate);
-
-    }
-
-    /** 
-     * Generates a set of bids with utility above a given threshold. The function
-     * stops after a certain number of iteration, to avoid spinning until the
-     * end of the negotiation.
-     * @param threshold The utility threshold
-     * @param numberOfBids The desired number of bids above this threshold in
-     * the result.
-     * @param spinLimit The maximum number of iterations.
-     * @return A set that, hopefully, contains numberOfBids bids having a utility
-     * above the threshold.
-     */
-    private Set<Bid> generateBids(double threshold, int numberOfBids, int spinLimit) {
-        Set<Bid> result = new HashSet<>();
-        // Fail-safe: we ensure that we at least always propose our max utility bid
-        result.add(getMaxUtilityBid());
-        // If the threshold is not within the possible limits
-        if (threshold > maxUtility || threshold < minUtility) {
-            return result;
-        }
-
-        // If we spend 1/10 of the allowed time without finding anything new, then stop
-        int deadSpinLimit = spinLimit / 10;
-        int spinCount = 0;
-        int deadSpinCount = 0;
-        do {
-            Bid randomBid = generateRandomBid();
-            if (additiveUtilitySpace.getUtility(randomBid) >= threshold) {
-                if(!result.contains(randomBid)) {
-                    deadSpinCount = -1;
-                }
-                result.add(randomBid);
+    private double[] getPredictedScores(double mean1, double std1, double mean2, double std2) {
+        // Those weights have been calculated from testing negotiations and linear regression
+        double[][] weights = {{0.0311632723234050 , 11.3890261814731 , 1.37498485260551 , 7.57488885843407 , 0.585245861458856},
+                {-0.504747034606162 , 21.3564825802284 , 2.93644981430394 , 11.6484361428377 , -0.119766699076194},
+                {-0.526942565179179 , 27.3114207973019 , 2.55112005222630 , 18.9063457493229 , -0.148290860834988}};
+        double[] input = {mean1, std1, mean2, std2, 1};
+        double[] scores = new double[3];
+        for(int i = 0; i < 3; ++i) {
+            scores[i] = 0;
+            for(int j = 0; j < 5; ++j) {
+                scores[i] += input[j] * weights[i][j];
             }
-            spinCount++;
-            deadSpinCount++;
-        } while (result.size() < numberOfBids && spinCount < spinLimit && deadSpinCount < deadSpinLimit);
-        return result;
+        }
+        return scores;
     }
 
-    /**
-     * This method is called to inform the party that another NegotiationParty
-     * chose an Action.
-     */
     @Override
     public void receiveMessage(AgentID sender, Action act) {
-        super.receiveMessage(sender, act);
-        if (act instanceof Offer) {
-            Bid bid = ((Offer) act).getBid();
-            opponentsModels.putIfAbsent(sender, new OpponentModel());
-            opponentsModels.get(sender).registerBid(bid, getUtility(bid));
+        double currentTime = getTimeLine().getTime();
 
-            // Storing last received bid
-            lastReceivedBid = bid;
+        if (currentTime <= 0.1) {
+            if (act instanceof Offer) {
+                Bid receivedBid = ((Offer) act).getBid();
+                addAnalysisOfffer(sender, getUtility(receivedBid));
+            }
+            theo.receiveMessage(sender, act);
+            michael.receiveMessage(sender, act);
+            emil.receiveMessage(sender, act);
+        } else if (!choiceMade) {
+            choosePokemon();
+            choiceMade = true;
+            selectedPokemon.receiveMessage(sender, act);
+        } else {
+            selectedPokemon.receiveMessage(sender, act);
         }
     }
 
-    /**
-     * Calculates a score representing the preferences of the opponents on a bid.
-     * @param bid The bid to evaluate.
-     * @return An estimated measure of preference of the opponents on this bid.
-     */
-    private double getOpponentScore(Bid bid) {
-        double score = 0;
-        for(OpponentModel model : opponentsModels.values()) {
-            score += model.getEstimatedScore(bid);
+    @Override
+    public Action chooseAction(List<Class<? extends Action>> arg0) {
+        double currentTime = getTimeLine().getTime();
+
+        if (currentTime <= 0.1 || !choiceMade) {
+            try {
+                return new Offer(getPartyId(), utilitySpace.getMaxUtilityBid());
+            } catch (Exception e) {
+                return new Offer(getPartyId(), generateRandomBid());
+            }
+        } else {
+            return selectedPokemon.chooseAction(arg0);
         }
-        return score;
     }
 
-    /**
-     * A human-readable description for this party.
-     */
+    public String getName() {
+        return "The Pokemon Master";
+    }
+
+    @Override
+    public String toString() {
+        return getName();
+    }
+
     @Override
     public String getDescription() {
-        return description;
+        return "Burst the Bubble !";
     }
 
-    /**
-     * @return the bid with the maximum possible utility, if it exists.
-     */
-    private Bid getMaxUtilityBid() {
-        try {
-            return this.additiveUtilitySpace.getMaxUtilityBid();
-        } catch (Exception ex) {
-            Logger.getLogger(Agent9.class.getName()).log(Level.SEVERE, null, ex);
-        }
-        return null;
-    }
-    
-    private Bid takeRandomBid(Set<Bid> bidSet) {
-        List<Bid> list = new ArrayList(bidSet.size());
-        list.addAll(bidSet);
-        Collections.shuffle(list);
-        return list.get(0);
-    }
 }

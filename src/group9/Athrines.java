@@ -2,7 +2,6 @@ package group9;
 
 import java.util.Random;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map.Entry;
@@ -36,8 +35,8 @@ public class Athrines extends AbstractNegotiationParty {
 	private double acceptanceThreshold;
 	private double selfishWeight;
 	
-	private static final double EPSILON = 0.33;
-	private static final double EPS_MIN_ACCEPTANCE = 0.875;
+	private static final double EPSILON = 0.15;
+	private static final double EPS_MIN_ACCEPTANCE = 0.885;
 	
 	private static final double SELFISH_WEIGHT_HARD = 3.0;
 	private static final double SELFISH_WEIGHT_SOFT = 2.5;
@@ -56,20 +55,18 @@ public class Athrines extends AbstractNegotiationParty {
 	
 	private ArrayList<IssueDiscrete> issues;
 	private OpponentModel opponentModel;
-	private CSVWriter csvw;
-	private boolean dataStopped;
 	
 	
 	@Override
 	public void init(NegotiationInfo info) {
 		super.init(info);
 		rounds = 0;
-		dataStopped = false;
 		selfishWeight = SELFISH_WEIGHT_HARD;
 		actionOfPartner = null;
 		lastReceivedBid = null;
 	
 		utilitySpace = (AdditiveUtilitySpace)info.getUtilitySpace();
+		
 		try {
 			maxUtility = getUtility(utilitySpace.getMaxUtilityBid());
 		} catch (Exception e) {
@@ -87,10 +84,6 @@ public class Athrines extends AbstractNegotiationParty {
 		
 		// initialize opponent preferences
 		opponentModel = new OpponentModel(issues);
-		
-		// serialize
-		csvw = new CSVWriter();
-		csvw.startWriting("ML_data.csv");
 	}
 
 
@@ -103,9 +96,6 @@ public class Athrines extends AbstractNegotiationParty {
 			// update the opponent model
 			opponentModel.updateFrequencies(lastReceivedBid, sender, getFrequencyWeight());
 			opponentModel.updatePreferences();
-			
-			// serialize
-			csvw.addOf(sender.getName(), getUtility(lastReceivedBid));
 		}
 		
 		double t = getTimeLine().getTime();
@@ -132,16 +122,7 @@ public class Athrines extends AbstractNegotiationParty {
 		double t = getTimeLine().getTime();
 		if(t > 0.1)
 		{
-			if(!dataStopped)
-			{
-				csvw.writeData();
-				csvw.stopWriting("ML_data.csv");
-				dataStopped = true;
-			}
-			
 			rounds++;
-			//opponentModel.printValuePreferences();
-			//opponentModel.printIssuePreferences();
 			
 			// we are first to act
 			if (lastReceivedBid == null || !possibleActions.contains(Accept.class)) {
@@ -266,16 +247,6 @@ public class Athrines extends AbstractNegotiationParty {
 		return bestBid;
 	}
 	
-	
-
-	@Override
-	public HashMap<String, String> negotiationEnded(Bid acceptedBid) {
-		csvw.writeData();
-		csvw.stopWriting("ML_data.csv");
-		return super.negotiationEnded(acceptedBid);
-	}
-
-
 	private double getFrequencyWeight() {
 		return Math.max(FREQ_INTERCEPT - Math.log((double)rounds / FREQ_DIVIDER + FREQ_BIAS), FREQ_MIN);
 	}

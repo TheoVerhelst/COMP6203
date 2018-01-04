@@ -60,24 +60,29 @@ public class Agent9 extends AbstractNegotiationParty {
             stds.add(std);
         }
         
-        double[] predictedScores = null;
+        double mean1 = means.get(0), mean2, std1 = stds.get(0), std2;
         // If we play against two identical opponents
         if(means.size() == 1) {
-            predictedScores = getPredictedScores(means.get(0), stds.get(0), means.get(0), stds.get(0));
+            mean2 = means.get(0);
+            std2 = stds.get(0);
         } else {
-            predictedScores = getPredictedScores(means.get(0), stds.get(0), means.get(1), stds.get(1));
+            mean2 = means.get(1);
+            std2 = stds.get(1);
         }
         
-        int bestScoreIndex = -1;
-        for(int i = 0; i < predictedScores.length; ++i) {
-            if(bestScoreIndex == -1 || predictedScores[bestScoreIndex] < predictedScores[i]) {
-                bestScoreIndex = i;
-            }
+        double meanMean = (mean1 + mean2) / 2;
+        double meanStd = (std1 + std2) / 2;
+        if(meanMean > 0.55) {
+            chosenPokemon = pokemons.get(2);
+        } else if(meanStd > 0.015) {
+            chosenPokemon = pokemons.get(1);
+        } else {
+            chosenPokemon = pokemons.get(0);
         }
-        chosenPokemon = pokemons.get(bestScoreIndex);
+        
         System.out.println(chosenPokemon.toString() + ", I choose you!");
         try {
-            Files.write(Paths.get("choosen_pokemon"),
+            Files.write(Paths.get("choosen_pokemon_2"),
                     (chosenPokemon.toString() + ", I choose you!\n").getBytes(),
                     StandardOpenOption.APPEND);
         }catch (IOException ex) {
@@ -85,22 +90,6 @@ public class Agent9 extends AbstractNegotiationParty {
         }
     }
     
-    private double[] getPredictedScores(double mean1, double std1, double mean2, double std2) {
-        // Those weights have been calculated from testing negotiations and linear regression
-        double[][] weights = {{0.0311632723234050 , 11.3890261814731 , 1.37498485260551 , 7.57488885843407 , 0.585245861458856},
-                {-0.504747034606162 , 21.3564825802284 , 2.93644981430394 , 11.6484361428377 , -0.119766699076194},
-                {-0.526942565179179 , 27.3114207973019 , 2.55112005222630 , 18.9063457493229 , -0.148290860834988}};
-        double[] input = {mean1, std1, mean2, std2, 1};
-        double[] scores = new double[3];
-        for(int i = 0; i < 3; ++i) {
-            scores[i] = 0;
-            for(int j = 0; j < 5; ++j) {
-                scores[i] += input[j] * weights[i][j];
-            }
-        }
-        return scores;
-    }
-
     @Override
     public void receiveMessage(AgentID sender, Action act) {
         double currentTime = getTimeLine().getTime();
